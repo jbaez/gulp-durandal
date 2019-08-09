@@ -44,6 +44,8 @@ module.exports = function gulpDurandaljs(userOptions){
 
         mainFile = options.main ? path.join(baseDir, options.main) : undefined,
 
+        modulesAlias = options.modulesAlias ||  false,
+
         almondWrapper = (function(){
             var almond = options.almond,
                 almondPath = typeof(almond) === 'string' ? almond : path.join(__dirname, 'res/custom-almond.js');
@@ -75,7 +77,9 @@ module.exports = function gulpDurandaljs(userOptions){
         scannedModules = (function(){
             var stripExtension = function(p){ return p.substr(0, p.length - path.extname(p).length); },
                 expand = function(p){ return glob.sync(path.normalize(path.join(baseDir, p))); },
-                relativeToBaseDir = path.relative.bind(path, baseDir),
+                dirForModulesAlias = modulesAlias ? baseDir.match(new RegExp('^.*(?=\\/' + modulesAlias + ')/')) : false,
+                relativeModulesDir = dirForModulesAlias ? dirForModulesAlias[0] : baseDir,
+                relativeToBaseDir = path.relative.bind(path, relativeModulesDir),
                 jsFiles = (function() {
                     var expandedJsFiles = _.flatten([ expand('/**/*.js') ]);
                     return _.unique( mainFile ? [mainFile].concat(expandedJsFiles) : expandedJsFiles );
@@ -83,6 +87,15 @@ module.exports = function gulpDurandaljs(userOptions){
                 jsModules = jsFiles.map(relativeToBaseDir).map(stripExtension),
                 pluggedFiles = _.flatten( _.map( _.keys(options.pluginMap) , function(ext){return expand('/**/*'+ext);} ) ),
                 pluggedModules = pluggedFiles.map(relativeToBaseDir).map(function(m){ return options.pluginMap[path.extname(m)] + '!' + m; });
+
+                if (modulesAlias && options.name) {
+                    // If using modulesAlias and the name option, remove the duplicated scanned file with module alias.
+                    var appModule = modulesAlias + '/' + options.name,
+                        mainModuleIndex = jsModules.indexOf(appModule);
+                    if (mainModuleIndex != -1) {
+                        jsModules.splice(mainModuleIndex, 1);
+                    }
+                }
 
             return {js: jsModules, plugged: pluggedModules};
         })(),
@@ -107,7 +120,7 @@ module.exports = function gulpDurandaljs(userOptions){
             }
             return undefined;
         })(),
-        
+
         rjsCb = function(text, sourceMapText){
 
             var output = options.output || path.basename(mainFile),
@@ -129,7 +142,7 @@ module.exports = function gulpDurandaljs(userOptions){
 
             stream.end();
         },
-        
+
         errCb = function(err){
             stream.emit('error', new gutil.PluginError(PLUGIN_NAME, err));
         };
@@ -148,6 +161,10 @@ module.exports = function gulpDurandaljs(userOptions){
         wrap: almondWrapper
     };
 
+    if (options.name) {
+        rjsConfig.name = options.name;
+    }
+
     rjsConfig = options.rjsConfigAdapter(rjsConfig);
 
     requirejs.optimize(rjsConfig, null, errCb);
@@ -156,6 +173,6 @@ module.exports = function gulpDurandaljs(userOptions){
         gutil.log('Durandal ' + gutil.colors.red(e.message));
         stream.end();
     });
-    
+
     return stream;
 };
